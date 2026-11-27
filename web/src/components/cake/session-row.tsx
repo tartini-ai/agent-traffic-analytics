@@ -32,12 +32,12 @@ export function DemoShopTag() {
   return <Hint text={WORDS.demoShopAbout} focusable><Badge variant="tag"><Store aria-hidden />{WORDS.demoShop}</Badge></Hint>
 }
 
-export function SessionRow({ s, compact = false }: { s: SessionSummary; compact?: boolean }) {
+export function SessionRow({ s, compact = false, listSearch }: { s: SessionSummary; compact?: boolean; listSearch?: string }) {
   const hi = isHighlighted(s.verdict)
   const bot = s.verdict === "bot"
   return (
     <Link
-      to={`/sessions/${s.id}`}
+      to={{ pathname: `/sessions/${s.id}`, search: listSearch }}
       data-highlight={hi || undefined}
       className={cn(
         "grid items-center rounded-xl border-2 border-line bg-card text-sm transition-transform minimal:border minimal:hover:bg-muted",

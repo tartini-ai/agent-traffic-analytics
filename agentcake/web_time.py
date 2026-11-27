@@ -25,8 +25,9 @@ session (only then are its stored records read).
 
     keep(con, batch)                       collect: what one accepted batch adds, in the caller's transaction
     fill(con, session_id, records, rows, url)   a session recorded before this: records, its stored (stream,
-                                           record, page view) triples, oldest first; rows, its batches' (page view,
-                                           url) in order; url, its landing address
+                                           record, page view) triples, oldest first; rows, batch_rows(); url, its
+                                           landing address
+    page_history(con, session_id, url, start) -> [(time, path)]: the timed history of a tab with counted views
     active(first_t, last_t, hidden_ms, hidden_since) -> (active_ms, total_ms) or None without a time
     session_active(con, tabs) -> (active_ms, total_ms) or None: a session's over its tabs, each tab
                                            (session_id, first_t, last_t, hidden_ms, hidden_since): the union of the
@@ -75,11 +76,12 @@ def keep(con, batch):
 def fill(con, session_id, records, rows, url=None):
     """Write a session's page views, time and hidden time from what was kept of it (see the module docstring): its time
     from every record kept, whatever its stream (_kept_span), as keep() widens it batch by batch."""
-    views = [record for stream, record, _ in records if stream == SIGNALS and record.get("ty") in (PAGE, PATH)]
-    if any(record.get("ty") == PATH or "p" in record for record in views):
-        counted = Counter(_path_of(record, None) for record in views)
+    signals = [(record["t"], record, page) for stream, record, page in records
+               if stream == SIGNALS and record.get("ty") in (PAGE, PATH)]
+    if _has_paths(signals):
+        counted = Counter(path for _, path in _signal_views(signals, rows, url))
     else:
-        counted = _views_from_batches(rows, url)
+        counted = Counter(path for _, path in _batch_views(rows)) or Counter({_path(url): 1})
     con.execute("DELETE FROM web_paths WHERE session_id=?", (session_id,))
     _add_views(con, session_id, counted)
     changes = _in_order([(*_visibility(record), page) for stream, record, page in records if _is_change(stream, record)])
@@ -87,6 +89,39 @@ def fill(con, session_id, records, rows, url=None):
     con.execute("UPDATE session_web SET first_t=?, last_t=?, hidden_ms=?, hidden_since=?, vis_t=?, vis_pv=? "
                 "WHERE session_id=?", (*_kept_span(con, session_id), hidden_ms, since,
                                        changes[-1][0] if changes else None, shown, session_id))
+
+
+def batch_rows(con, session_id):
+    """(page view, URL, time) in the order cake.js numbered the batches of each view."""
+    return con.execute("SELECT pv, url, COALESCE(t, recv_ms) FROM batches WHERE session_id=? ORDER BY pv, seq",
+                       (session_id,)).fetchall()
+
+
+def page_history(con, session_id, url, start):
+    """Page loads and SPA path changes, oldest first. Older batches can supply paths without a page or path signal."""
+    signals = []
+    for t, _, text, page in streams.read_events(con, session_id, [SIGNALS], with_page=True):
+        if MARKS[PAGE] in text or MARKS[PATH] in text:
+            record = json.loads(text)
+            if record.get("ty") in (PAGE, PATH):
+                signals.append((t, record, page))
+    if _has_paths(signals):
+        rows = batch_rows(con, session_id) if any(not r.get("p") for _, r, _ in signals) else []
+        return _signal_views(signals, rows, url)
+    opened = {page: t for t, record, page in signals if record.get("ty") == PAGE}
+    return sorted(_batch_views(batch_rows(con, session_id), opened), key=lambda view: view[0]) or [(start, _path(url))]
+
+
+def _has_paths(signals):
+    return any(record.get("ty") == PATH or "p" in record for _, record, _ in signals)
+
+
+def _signal_views(signals, rows, url):
+    """A pathless page signal takes the first batch address for its page view, or the tab's landing address."""
+    urls = {}
+    for page, address, _ in rows:
+        urls.setdefault(page, address)
+    return [(t, _path_of(record, urls.get(page, url))) for t, record, page in signals]
 
 
 def _kept_span(con, session_id):
@@ -247,13 +282,11 @@ def _hidden(changes, since, shown):
     return closed, since, shown
 
 
-def _views_from_batches(rows, url):
-    """An older cake.js's page views by path: each page view's first path, and each change of path between its
-    batches; without any batch (cake 0.3.4), one view of the landing address url."""
-    counted, last = Counter(), {}
-    for page_view, url in rows:
+def _batch_views(rows, opened=None):
+    """An older cake.js's page views: each view's first path and each change of path between its batches."""
+    opened, last = opened or {}, {}
+    for page_view, url, t in rows:
         path = _path(url)
         if last.get(page_view) != path:
-            counted[path] += 1
+            yield (t if page_view in last else opened.get(page_view, t), path)
             last[page_view] = path
-    return counted or Counter({_path(url): 1})

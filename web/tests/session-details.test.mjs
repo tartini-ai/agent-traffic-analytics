@@ -208,6 +208,62 @@ test("ten rows, then Show all N opens the rest in place, and Show fewer closes t
   } finally { await tab.close() }
 })
 
+test("a Paths link opens only matching sessions and keeps the date, verdict and removable path after reload", async () => {
+  const path = "/demo/checkout"
+  const row = { ...web.paths[0], path, agent: 3, human: 1 }
+  const tab = await open({ webAnswer: { ...web, paths: [row] } })
+  try {
+    await pick(tab.page, tab.page.getByRole("combobox", { name: "Date range" }), "Last 30 days")
+    const region = table(tab.page, WORDS.paths)
+    const link = region.getByRole("link", { name: WORDS.web.watchPath(path) })
+    for (const [label, filter] of [["Human", "human"], ["All", null], ["Agent", "agent"]]) {
+      await region.getByRole("radio", { name: label }).click()
+      const query = new URLSearchParams((await link.getAttribute("href")).split("?")[1])
+      assert.deepEqual([query.get("path"), query.get("range"), query.get("filter")], [path, "30d", filter])
+    }
+    const filtered = () => tab.page.waitForResponse((response) => {
+      const url = new URL(response.url())
+      return url.pathname === "/api/sessions" && url.searchParams.get("path") === path &&
+        url.searchParams.get("range") === "30d" && url.searchParams.get("verdict") === "agent"
+    }, { timeout: WAIT_MS })
+    const requested = filtered()
+    await link.press("Enter")
+    assert.ok((await requested).ok())
+    const chip = tab.page.getByText(WORDS.web.visitedPath(path), { exact: true })
+    const summary = tab.page.getByText("3 sessions, sorted from newest to oldest", { exact: true })
+    await chip.waitFor({ timeout: WAIT_MS })
+    await summary.waitFor({ timeout: WAIT_MS })
+    assert.deepEqual(await tab.page.locator('a[href^="#/sessions/"]').evaluateAll((links) =>
+      links.map((item) => item.getAttribute("href").split("?")[0])), ["#/sessions/7f3a-c1", "#/sessions/6e0f-13", "#/sessions/4c2d-71"])
+    const reload = filtered()
+    await tab.page.reload()
+    assert.ok((await reload).ok())
+    await chip.waitFor({ timeout: WAIT_MS })
+    await summary.waitFor({ timeout: WAIT_MS })
+    await tab.page.getByRole("button", { name: WORDS.web.removePathFilter }).click()
+    await chip.waitFor({ state: "detached", timeout: WAIT_MS })
+    const query = new URLSearchParams(new URL(tab.page.url()).hash.split("?")[1])
+    assert.deepEqual(Object.fromEntries(query), { range: "30d", filter: "agent" })
+  } finally { await tab.close() }
+})
+
+test("a percent-encoded path survives navigation at phone width", async () => {
+  const path = `/demo/${"long-path".repeat(12)}%2Fdetails`
+  const tab = await open({ width: 485, webAnswer: { ...web, paths: [{ ...web.paths[0], path }] } })
+  try {
+    const link = table(tab.page, WORDS.paths).getByRole("link", { name: WORDS.web.watchPath(path) })
+    const result = tab.page.waitForResponse((response) => {
+      const url = new URL(response.url())
+      return url.pathname === "/api/sessions" && url.searchParams.get("path") === path
+    }, { timeout: WAIT_MS })
+    await link.press("Enter")
+    assert.ok((await result).ok())
+    await tab.page.getByText(WORDS.web.visitedPath(path), { exact: true }).waitFor({ timeout: WAIT_MS })
+    const [scroll, width] = await tab.page.evaluate(() => [document.documentElement.scrollWidth, document.documentElement.clientWidth])
+    assert.ok(scroll <= width, "the path filter fits at phone width")
+  } finally { await tab.close() }
+})
+
 test("a value opens Session replay narrowed to its sessions; a region reads Country – name, a country's own Not set Country – Not set; DB-IP's credit sits under the places", async () => {
   const tab = await open()
   try {

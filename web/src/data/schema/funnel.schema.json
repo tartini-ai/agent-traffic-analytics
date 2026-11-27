@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "funnel.schema.json",
+  "title": "FunnelReport",
+  "description": "GET /api/funnel?range=&step=&step=. Each count is for visits that reached this path after the preceding steps in the same visit.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["steps"],
+  "properties": {
+    "steps": {
+      "type": "array",
+      "minItems": 2,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["path", "agent", "human"],
+        "properties": {
+          "path": { "type": "string", "pattern": "^/[^?#]*$" },
+          "agent": { "$ref": "common.schema.json#/$defs/Count" },
+          "human": { "$ref": "common.schema.json#/$defs/Count" }
+        }
+      }
+    }
+  }
+}

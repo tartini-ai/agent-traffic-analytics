@@ -169,14 +169,53 @@ test("a count of a thousand or more has a comma between thousands on the cards, 
   } finally { await tab.close() }
 })
 
-test("Deep dive's cards come straight under its heading, in order: Top agents, Trends, Paths, Sources, Devices, Geography", async () => {
+test("Deep dive's cards come straight under its heading, in order: Top agents, Trends, Paths, Path funnel, Sources, Devices, Geography", async () => {
   const tab = await open()
   try {
     const order = await tab.page.locator("main").evaluate((main) =>
       [...main.querySelectorAll('h2, h3, [data-slot="card-title"]')].map((el) => el.textContent.trim()))
     const deepDive = order.slice(order.indexOf(WORDS.deepDive) + 1, order.indexOf(REFERENCE))
-    assert.deepEqual(deepDive, [TOP_AGENTS, WORDS.trends, WORDS.paths, ...["sources", "devices", "geography"].map((t) => WORDS.web.titles[t])],
+    assert.deepEqual(deepDive, [TOP_AGENTS, WORDS.trends, WORDS.paths, WORDS.funnel.title, ...["sources", "devices", "geography"].map((t) => WORDS.web.titles[t])],
       `no heading between Deep dive and its cards: ${JSON.stringify(order)}`)
+  } finally { await tab.close() }
+})
+
+test("the Path funnel keeps ordered paths across reloads and applies date range changes", async () => {
+  const tab = await open()
+  try {
+    const { page } = tab
+    const funnel = page.getByRole("region", { name: WORDS.funnel.title })
+    assert.equal(await funnel.getByRole("table").count(), 0)
+    assert.ok(!tab.requests.some((request) => new URL(request).pathname === "/api/funnel"), "wait for defined steps")
+    await funnel.getByRole("textbox", { name: "Step 1 path" }).fill("/pricing")
+    await funnel.getByRole("textbox", { name: "Step 2 path" }).fill("/signup")
+    await funnel.getByRole("textbox", { name: "Step 2 path" }).press("Enter")
+    const completion = funnel.getByRole("status").filter({ hasText: "50% completion rate" })
+    await completion.waitFor({ timeout: WAIT_MS })
+    const rows = funnel.getByRole("row")
+    assert.deepEqual(await rows.nth(1).getByRole("cell").allInnerTexts(), ["2 (100%)", "1 (100%)", "1 (100%)"])
+    assert.deepEqual(await rows.nth(2).getByRole("cell").allInnerTexts(), ["1 (50%)\n1 dropped off", "1 (100%)\n0 dropped off", "0 (0%)\n1 dropped off"])
+    const saved = (url) => new URLSearchParams(new URL(url).hash.split("?")[1]).getAll("step")
+    assert.deepEqual(saved(page.url()), ["/pricing", "/signup"])
+    await page.reload()
+    await completion.waitFor({ timeout: WAIT_MS })
+    assert.equal(await funnel.getByRole("textbox", { name: "Step 1 path" }).inputValue(), "/pricing")
+    await page.getByRole("combobox", { name: "Date range" }).click()
+    const called = page.waitForRequest((request) => {
+      const url = new URL(request.url())
+      return url.pathname === "/api/funnel" && url.searchParams.get("range") === "24h"
+    })
+    await page.getByRole("option", { name: "Last 24 hours" }).click()
+    assert.deepEqual(new URL((await called).url()).searchParams.getAll("step"), ["/pricing", "/signup"])
+    assert.deepEqual(saved(page.url()), ["/pricing", "/signup"])
+    await funnel.getByRole("button", { name: "Add step" }).click()
+    await funnel.getByRole("textbox", { name: "Step 3 path" }).fill("/docs%20install")
+    await funnel.getByRole("button", { name: "Run funnel" }).click()
+    await funnel.getByText(WORDS.funnel.none, { exact: true }).waitFor({ timeout: WAIT_MS })
+    assert.deepEqual(saved(page.url()), ["/pricing", "/signup", "/docs%20install"])
+    await funnel.getByRole("button", { name: "Remove step 3" }).click()
+    await funnel.getByRole("button", { name: "Run funnel" }).click()
+    await completion.waitFor({ timeout: WAIT_MS })
   } finally { await tab.close() }
 })
 
@@ -204,7 +243,7 @@ test("the Agent block and every Deep dive card say what they show behind an info
     const main = tab.page.locator("main")
     const names = await main.getByRole("button", { name: /^About / }).evaluateAll((els) => els.map((el) => el.getAttribute("aria-label")))
     for (const name of [`About ${WORDS.agentSessions}`, `About ${WORDS.agentsChart} ${WORDS.chart}`, `About ${WORDS.trends} ${WORDS.chart}`,
-      `About ${WORDS.paths}`, ...["sources", "devices", "geography"].map((t) => `About ${WORDS.web.titles[t]}`)]) assert.ok(names.includes(name), `${name} in ${JSON.stringify(names)}`)
+      `About ${WORDS.paths}`, `About ${WORDS.funnel.title}`, ...["sources", "devices", "geography"].map((t) => `About ${WORDS.web.titles[t]}`)]) assert.ok(names.includes(name), `${name} in ${JSON.stringify(names)}`)
     const paths = main.getByRole("button", { name: `About ${WORDS.paths}`, exact: true })
     await paths.scrollIntoViewIfNeeded()
     await scrolled(tab.page)
@@ -431,6 +470,7 @@ test("every full-width block lines up: the Agent block, the number cards, the tw
         keyMetrics: page.getByRole("region", { name: WORDS.totals }),
         trends: chartCard(WORDS.trends), agentsChart: chartCard(WORDS.agentsChart),
         paths: page.getByRole("region", { name: WORDS.paths }).locator('[data-slot="card"]'),
+        funnel: page.getByRole("region", { name: WORDS.funnel.title }).locator('[data-slot="card"]'),
         ...Object.fromEntries(["sources", "devices", "geography"].map((table) =>
           [table, page.getByRole("region", { name: WORDS.web.titles[table], exact: true }).locator('[data-slot="card"]')])),
       }

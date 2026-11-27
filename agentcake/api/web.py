@@ -224,6 +224,13 @@ def _paths(con, scope):
     return found
 
 
+def visiting(scope, path):
+    """The Paths table's sessions for a stored pathname, once per visit regardless of its views or tabs."""
+    member = (f"EXISTS (SELECT 1 FROM sessions ps JOIN web_paths p ON p.session_id = ps.id "
+              f"WHERE ps.id IN {visits.TAB_IDS} AND {visits.tab_counts('ps')} AND p.path = ?)")
+    return scope.where(f"{VERDICT} IN (?, ?)", *COUNTED).where(member, path)
+
+
 def path_rows(paths, sessions):
     """The Path table: per path its sessions, visitors and page views, each in all, Agent and Human; most sessions
     first, then visitors, page views, the path; the top rows_max of each kind, together (_tops)."""

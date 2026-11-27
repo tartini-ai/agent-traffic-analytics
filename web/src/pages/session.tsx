@@ -5,7 +5,7 @@
 // and shows each tab's own reasons, the tab the verdict rests on first.
 import { useState } from "react"
 import { ArrowLeft, Search, Sparkles, Timer } from "lucide-react"
-import { Link, useParams } from "react-router"
+import { Link, useLocation, useNavigate, useParams } from "react-router"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Button } from "@/components/ui/button"
 import { Card, CardAction, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -13,6 +13,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
 import { SectionTitle, Columns } from "@/components/cake/bits"
 import { AgentTag } from "@/components/cake/avatar"
+import { DeleteSession } from "@/components/cake/delete-session"
 import { Loaded } from "@/components/cake/page-state"
 import { ReplayControls, ReplayStage, missingText } from "@/components/cake/replay-stage"
 import { ServerHalfTable } from "@/components/cake/server-half"
@@ -30,11 +31,20 @@ import { WORDS } from "@/lib/words"
 
 export function SessionPage() {
   const { id = "" } = useParams()
+  return <SessionView key={id} id={id} />
+}
+
+function SessionView({ id }: { id: string }) {
+  const { search } = useLocation()
+  const navigate = useNavigate()
+  const toList = { pathname: "/sessions", search }
   const detail = useApi((signal) => api.session(id, signal), [id])
   return (
     <div className="flex flex-col gap-5">
-      <div><Button variant="link" size="sm" asChild><Link to="/sessions"><ArrowLeft aria-hidden />{WORDS.sessionsPage}</Link></Button></div>
-      <Loaded state={detail} what="this session">{(d) => <SessionBody key={d.session.id} d={d} />}</Loaded>
+      <div><Button variant="link" size="sm" asChild><Link to={toList}><ArrowLeft aria-hidden />{WORDS.sessionsPage}</Link></Button></div>
+      <Loaded state={detail} what="this session">{(d) => (
+        <SessionBody key={d.session.id} d={d} onDone={() => void navigate(toList, { replace: true })} />
+      )}</Loaded>
     </div>
   )
 }
@@ -80,7 +90,7 @@ function tabTracks(d: SessionDetail, tabs: SessionTab[], shown: number | undefin
   })
 }
 
-function SessionBody({ d }: { d: SessionDetail }) {
+function SessionBody({ d, onDone }: { d: SessionDetail; onDone: () => void }) {
   const s = d.session
   const replay = useReplay(d, (n, signal, tab) => api.replayChunk(s.id, n, signal, tab), cursorLabels)
   const live = replay.status !== "missing"
@@ -96,10 +106,13 @@ function SessionBody({ d }: { d: SessionDetail }) {
   const view = timelineView(d.timeline, { playheadMs: live ? replay.timeMs : undefined })
   return (
     <>
-      <div className="flex flex-col gap-2">
-        <Verdict s={s} percent={d.percent} />
-        <h1 className="text-3xl font-semibold minimal:text-2xl minimal:font-bold minimal:tracking-tight">{d.title}</h1>
-        <p className="text-sm text-muted-foreground">{s.when} · {duration(d.timeline.duration_ms)} · {tabCount > 1 && `${WORDS.tabCount(integer(tabCount))} · `}{integer(d.pages.length)} page{d.pages.length === 1 ? "" : "s"} · Session ID <span className="font-mono">{s.id}</span></p>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="flex flex-col gap-2">
+          <Verdict s={s} percent={d.percent} />
+          <h1 className="text-3xl font-semibold minimal:text-2xl minimal:font-bold minimal:tracking-tight">{d.title}</h1>
+          <p className="text-sm text-muted-foreground">{s.when} · {duration(d.timeline.duration_ms)} · {tabCount > 1 && `${WORDS.tabCount(integer(tabCount))} · `}{integer(d.pages.length)} page{d.pages.length === 1 ? "" : "s"} · {WORDS.sessionId} <span className="font-mono">{s.id}</span></p>
+        </div>
+        <DeleteSession sessionTitle={d.title} session={s} onDelete={() => api.deleteSession(s.id)} onDone={onDone} />
       </div>
       <Columns ratio="3-2">
         <div className="flex flex-col gap-5">

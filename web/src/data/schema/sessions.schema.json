@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "sessions.schema.json",
   "title": "SessionsPage",
-  "description": "GET /api/sessions?verdict=&turns=&evidence=&agent=&range=&cursor= : one page of the session list, newest first.",
+  "description": "GET /api/sessions?verdict=&turns=&evidence=&agent=&range=&path=&cursor= : one page of the session list, newest first.",
   "type": "object",
   "additionalProperties": false,
   "required": ["counts", "total", "agent_names", "results", "next", "page_size"],

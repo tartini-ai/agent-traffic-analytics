@@ -20,6 +20,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
 import { BudgetWarning, CopyBlock, DiskStoppedWarning, DocumentLink, Hint, InfoTip, PageHeader, StatCard, StorageMeter, StorageUse } from "@/components/cake/bits"
 import { Crumb, CrumbHead } from "@/components/cake/crumb"
+import { DeleteSession } from "@/components/cake/delete-session"
+import { FunnelResults, PathFunnel } from "@/components/cake/path-funnel"
 import { OnboardingStep, OrSeparator } from "@/components/cake/onboarding"
 import { ProjectLink } from "@/components/cake/project-link"
 import { Loaded, PageError, PageLoading } from "@/components/cake/page-state"
@@ -42,7 +44,7 @@ import { StyleMenu } from "@/components/cake/style-menu"
 import { UNREACHABLE, api, useApi } from "@/data/api"
 import type { Overview, Registration, SessionSummary, Timezones, WebAnalytics } from "@/data/types"
 import { NO_VALUE, integer, mbToBytes } from "@/lib/format"
-import { EXAMPLE_SITE, LAYER_LOOKS, PAGE_LOOKS, SERVER_LOOKS, TAB_HANDOFFS, nothing, stillReplay, stillTabs } from "@/pages/component-samples"
+import { EXAMPLE_SITE, FUNNEL_LOOK, LAYER_LOOKS, PAGE_LOOKS, SERVER_LOOKS, TAB_HANDOFFS, nothing, stillReplay, stillTabs } from "@/pages/component-samples"
 import { PRODUCT_NAME } from "@/lib/product"
 import { UNNAMED } from "@/lib/taxonomy"
 import { CLARITY, WORDS } from "@/lib/words"
@@ -251,6 +253,11 @@ function Overview({ overview: o, registration, sessions, web, zones }: {
         <Hint text="More"><Button variant="ghost" size="icon" aria-label="More"><MoreHorizontal /></Button></Hint>
         <span className="flex items-center gap-2 text-sm font-bold text-muted-foreground">Active time spent<InfoTip label="Active time spent" lines={CLARITY.activeTime} /></span>
       </Block>
+      <Block name="DeleteSession" use="The replay page asks you to confirm the session, its replay and every tab in the visit. The session title, time and ID identify the visit before you delete it."
+        code="Dialog · Button destructive · Alert · POST /api/delete">
+        <DeleteSession sessionTitle="An example session" session={{ id: "1234abcd", when: "Today 09:28" }}
+          onDelete={async () => ({ sessions: [{ found: true }], database: { error: null, log_cleared: true }, backups: [], log_lines: 0 })} onDone={nothing} />
+      </Block>
       <Block name="TopAgentsChart · MetricPicker" use={[
           "Top agents shows a bar for each agent, based on the metric that you select. The metric menu works the same way as on Trends. The agent with the highest value appears first.",
           "Each agent gets its own row, and Unnamed agents appear with the gray avatar. Each bar ends with its value, or a dash when there's no value. Script bots never appear in this chart.",
@@ -303,13 +310,23 @@ function Overview({ overview: o, registration, sessions, web, zones }: {
           "The Paths, Sources, Devices, and Geography cards all use this table. Each card shows its title at the top. Each table starts with a different breakdown: Channel, Device type, or Country.",
           "All, Agent, and Human use the session list's classification colors. Each row shows the sessions in bold, then visitors and page views, for the selected type. When All is selected, the Agent share also appears in bold.",
           "Hover over a row to split each number into Agent and Human. Rows are sorted by sessions, and the first ten appear until you select Show all. Script bots aren't counted.",
-          "Select a value to open its sessions. On a narrow screen, the table scrolls instead of the page.",
+          "Select a path or a breakdown value to open its matching sessions with the date range and session type selected. The session list shows a removable filter. On a narrow screen, the table scrolls inside its card.",
           "A region or city appears with its country. Each country also has its own Not set row.",
           "Below Geography, SourceCredit links to the source of the city database.",
-        ]} code="Select · SourceCredit · /api/web">
+        ]} code="Select · SourceCredit · /api/web · /api/sessions">
         <div className="w-full"><PathsTable paths={web.paths} shown={web.shown} /></div>
         <div className="w-full"><WebStatsTable title={WORDS.web.titles.sources} icon={TABLE_ICONS.sources} help={WORDS.about.sources} table={web.tables.sources} shown={web.shown} place={web.place} /></div>
         <div className="w-full"><WebStatsTable title={WORDS.web.titles.geography} icon={TABLE_ICONS.geography} help={WORDS.about.geography} table={web.tables.geography} shown={web.shown} place={web.place} initial="region" /></div>
+      </Block>
+      <Block name="PathFunnel · FunnelResults" use={[
+        "Enter two or more page paths in the order a session should reach them. The dashboard's date range determines which sessions count.",
+        "The table shows how many sessions reached each step or dropped off before it, in all and for Agent and Human. Percentages use the sessions of that kind that reached the first step.",
+      ]} code="Card · Input · Label · Button outline · Table · /api/funnel">
+        <div className="w-full">
+          <PathFunnel steps={FUNNEL_LOOK.steps.map((step) => step.path)} onRun={nothing}>
+            <FunnelResults report={FUNNEL_LOOK} />
+          </PathFunnel>
+        </div>
       </Block>
       <Block name="PageLoading · PageError" use="Before a page's data is ready, a loading message fades in after a moment. If the data can't load, the page shows the error and a Try again button." code="Loaded">
         <div className="grid w-full items-center gap-4 md:grid-cols-2">

@@ -3,7 +3,8 @@
 // frontend/src/Api.js (MIT): one small fetch wrapper that turns the server's error body into an error. No code copied.
 import { useEffect, useState, type DependencyList } from "react"
 import { PRODUCT_NAME } from "@/lib/product"
-import type { Overview, OverviewQuery, Registration, ReplayChunk, SessionDetail, SessionsPage, SessionsQuery, Settings, SettingsUpdate, Setup, Timezones, WebAnalytics, WebQuery } from "./types"
+import type { SessionDeletion } from "./session-types"
+import type { DateRange, FunnelReport, Overview, OverviewQuery, Registration, ReplayChunk, SessionDetail, SessionsPage, SessionsQuery, Settings, SettingsUpdate, Setup, Timezones, WebAnalytics, WebQuery } from "./types"
 
 /** Relative to the page, like the built assets (vite base "./"), so the pages work under any path. */
 const BASE = "api/"
@@ -54,6 +55,11 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
 export const api = {
   overview: (q: OverviewQuery, signal?: AbortSignal) => request<Overview>("overview" + query(q), { signal }),
   web: (q: WebQuery, signal?: AbortSignal) => request<WebAnalytics>("web" + query(q), { signal }),
+  funnel: (range: DateRange, steps: string[], signal?: AbortSignal) => {
+    const params = new URLSearchParams({ range })
+    for (const path of steps) params.append("step", path)
+    return request<FunnelReport>("funnel?" + params.toString(), { signal })
+  },
   sessions: (q: SessionsQuery, signal?: AbortSignal) => request<SessionsPage>("sessions" + query(q), { signal }),
   session: (id: string, signal?: AbortSignal) => request<SessionDetail>(`session/${encodeURIComponent(id)}`, { signal }),
   /** tab: one of the session's tabs (SessionTab.id) in a session of more than one; left out for a session of one. */
@@ -67,6 +73,9 @@ export const api = {
   /** "Delete all data" on the settings page, after its Dialog: every session and its replay (POST /api/delete). */
   deleteEverything: () =>
     request<unknown>("delete", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ all: true }) }),
+  /** Deletes the visit named by the displayed session ID, including every tab and its replay. */
+  deleteSession: (id: string) =>
+    request<SessionDeletion>("delete", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ sessions: [id] }) }),
   registration: (signal?: AbortSignal) => request<Registration>("register", { signal }),
   /** The press of "Register and continue": body is the very text "View registration data" showed (src/lib/registration.ts). */
   register: (body: string) =>

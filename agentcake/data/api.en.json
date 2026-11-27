@@ -6,6 +6,7 @@
     "no_chunk": "This part of the replay isn't available. Reload the page to load the replay again.",
     "no_route": "No such address: {path}",
     "bad_choice": "{field} must be one of the following values: {choices}.",
+    "bad_funnel_steps": "Enter two or more page paths that start with / and leave out any query string or fragment.",
     "bad_count": "{field} must be a whole number, 0 or more.",
     "bad_cursor": "{name} can't load this part of the list. Reload the list to start again from the top.",
     "not_local": "Open the {name} page at 127.0.0.1 or localhost on the {name} port. Requests must come from that page, opened on its host computer or through a tunnel.",

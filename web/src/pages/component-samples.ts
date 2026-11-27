@@ -1,6 +1,6 @@
 // The fixed sample props of the component overview (./components.tsx) for the components it shows without cake's own
 // data: layers, a server half, pages, and the replay stage and controls with no player behind them.
-import type { Handoff, LayerReasons, ServerHalf, SessionPage } from "@/data/types"
+import type { FunnelReport, Handoff, LayerReasons, ServerHalf, SessionPage } from "@/data/types"
 import type { ReplayState } from "@/lib/use-replay"
 
 /** A layer for each look: a verdict with its reasons, and a layer that is off with no reason given. */
@@ -23,6 +23,12 @@ export const PAGE_LOOKS: SessionPage[] = [
   { path: "/pricing?plan=team", at_ms: 21300, duration_ms: 44700, actions: 7, who: "human_agent" },
   { path: "/signup", at_ms: 66000, duration_ms: 4000, actions: 0, who: "agent" },
 ]
+export const FUNNEL_LOOK: FunnelReport = {
+  steps: [
+    { path: "/pricing", agent: 1, human: 1 },
+    { path: "/signup", agent: 1, human: 0 },
+  ],
+}
 export const nothing = () => undefined
 /** The replay stage and its controls as they look with no player behind them (the session page plays for real). */
 export const EXAMPLE_SITE = "https://shop.example.com/"

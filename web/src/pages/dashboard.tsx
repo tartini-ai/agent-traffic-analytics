@@ -1,7 +1,7 @@
 // Dashboard (DESIGN.md §1.1), in three parts with one heading level. Key metrics: the Agent block first, then the counts
 // by importance, each card named by what it counts: sessions, visitors, page views, active time spent and pages per
 // session, in total and by verdict. Deep dive, its cards straight under its heading and named by their content as
-// PostHog's and Clarity's dashboards: Top agents, Trends, then the Paths, Sources, Devices and Geography tables, each
+// PostHog's and Clarity's dashboards: Top agents, Trends, Paths, Path funnel, Sources, Devices and Geography, each
 // as wide as the cards above. Reference last (the session list is Session replay's). What a number or a chart means is
 // behind its information icon (Clarity's own words where Clarity defines it). The disk shows only as a warning, from the
 // budget's warning share on or while new replays stop. One AgentCake is one project, its website: no source filter.
@@ -35,6 +35,7 @@ import { TAXONOMY } from "@/lib/taxonomy"
 import { cn } from "@/lib/utils"
 import { CLARITY, RANGES, WORDS, metricName } from "@/lib/words"
 import { Onboarding } from "@/pages/home"
+import { DashboardFunnel } from "@/pages/dashboard-funnel"
 
 /** The text colour of each verdict's icon on the number cards: the colour its badge's word has. */
 const VERDICT_TONE: Record<Verdict, string> = { human: "text-human-foreground", agent: "text-agent-foreground", bot: "text-unsure-foreground" }
@@ -114,7 +115,8 @@ function DashboardBody({ o, web, range, agentEver, demoOnly }: {
         <PageHeader as="h2" title={WORDS.deepDive} />
         <TopAgentsChart agents={web.agents} />
         <TrendsChart trends={web.trends} timeZone={web.time_zone} />
-        <PathsTable paths={web.paths} shown={web.shown} />
+        <PathsTable paths={web.paths} shown={web.shown} range={range} />
+        <DashboardFunnel range={range} />
         <WebStatsTable title={WORDS.web.titles.sources} icon={TABLE_ICONS.sources} help={WORDS.about.sources} table={web.tables.sources} shown={web.shown} place={web.place} range={range} initial="channel" />
         <WebStatsTable title={WORDS.web.titles.devices} icon={TABLE_ICONS.devices} help={WORDS.about.devices} table={web.tables.devices} shown={web.shown} place={web.place} range={range} initial="device_type" />
         <WebStatsTable title={WORDS.web.titles.geography} icon={TABLE_ICONS.geography} help={WORDS.about.geography} table={web.tables.geography} shown={web.shown} place={web.place} range={range} initial="country" />

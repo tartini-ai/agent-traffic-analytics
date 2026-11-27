@@ -4,9 +4,9 @@
 // row splits it into Agent only and Human + agent (named as src/lib/taxonomy.ts names them), which combines with the
 // agent's name (the dashboard links to each name). A row of the dashboard's Sources, Devices or Geography tables opens
 // the list of its sessions (dimension and key in the URL, as PostHog's "View recordings"): a tag in the filter bar says
-// which, and removing it shows every session again.
+// which. A Paths row adds the exact visited pathname to the list's URL. Its own filter tag clears just that path.
 import { useState } from "react"
-import { useSearchParams } from "react-router"
+import { useLocation, useSearchParams } from "react-router"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -36,7 +36,7 @@ const CHIPS: { value: Verdict | typeof ALL; label: string; variant: "outline" | 
   { value: "bot", label: TAXONOMY.verdicts.bot.label, variant: "bot" },
 ]
 
-type Filters = { filter: Verdict | typeof ALL; turns: AgentTurns | typeof ALL; evidence: Evidence | typeof ALL; agent: string; range: DateRange }
+type Filters = { filter: Verdict | typeof ALL; turns: AgentTurns | typeof ALL; evidence: Evidence | typeof ALL; agent: string; range: DateRange; path: string | null }
 /** The row of a dashboard table the list is narrowed to: its dimension, key (null: the sessions without a value), label. */
 type Row = { dimension: WebDimension; key: string | null; label: string }
 const DIMENSIONS = Object.keys(WORDS.web.dimensions) as WebDimension[]
@@ -54,7 +54,7 @@ export function SessionsPage() {
   const agentPicked = filter === "agent", humanPicked = filter === "human"
   const filters: Filters = {
     filter, turns: agentPicked ? readTurns(params) : ALL, evidence: humanPicked ? readEvidence(params) : ALL,
-    agent: params.get("agent") ?? ANY_AGENT, range: readRange(params),
+    agent: params.get("agent") ?? ANY_AGENT, range: readRange(params), path: params.get("path") || null,
   }
   const row = readRow(params)
   const query: SessionsQuery = {
@@ -63,12 +63,17 @@ export function SessionsPage() {
     evidence: choiceQuery(filters.evidence),
     agent: filters.agent === ANY_AGENT ? undefined : filters.agent,
     range: filters.range,
+    path: filters.path ?? undefined,
     ...(row && { dimension: row.dimension, ...(row.key !== null && { key: row.key }) }),
   }
   const key = JSON.stringify(query)
   // The answer remembers its query, so the rows, "Load more" and its cursor always belong together.
   const first = useApi(async (signal) => ({ key, query, page: await api.sessions(query, signal) }), [key])
-  const set = (name: keyof Filters) => (value: string) => setParams((p) => { p.set(name, value); return p })
+  const set = (name: keyof Filters) => (value: string | null) => setParams((p) => {
+    if (value === null) p.delete(name)
+    else p.set(name, value)
+    return p
+  })
   return (
     <div className="flex flex-col gap-5">
       <PageHeader title={WORDS.sessionsPage} />
@@ -81,13 +86,14 @@ export function SessionsPage() {
 }
 
 function SessionList({ query, page, filters, set, clear, row, clearRow }: {
-  query: SessionsQuery; page: Page; filters: Filters; set: (name: keyof Filters) => (value: string) => void; clear: () => void
+  query: SessionsQuery; page: Page; filters: Filters; set: (name: keyof Filters) => (value: string | null) => void; clear: () => void
   row: Row | null; clearRow: () => void
 }) {
   const [more, setMore] = useState<SessionSummary[]>([])
   const [next, setNext] = useState(page.next)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const { search } = useLocation()
   const rows = [...page.results, ...more]
   const total = page.total // the rows on screen, even while a new filter loads
   const left = total - rows.length
@@ -121,6 +127,12 @@ function SessionList({ query, page, filters, set, clear, row, clearRow }: {
               <Button variant="link" size="sm" onClick={clearRow}>{WORDS.web.removeFilter}</Button>
             </span>
           )}
+          {filters.path && (
+            <span className="inline-flex min-w-0 max-w-full items-center gap-1">
+              <Badge variant="tag" className="h-auto min-h-6 min-w-0 shrink whitespace-normal wrap-anywhere">{WORDS.web.visitedPath(filters.path)}</Badge>
+              <Button variant="link" size="sm" aria-label={WORDS.web.removePathFilter} onClick={() => set("path")(null)}>{WORDS.web.removeFilter}</Button>
+            </span>
+          )}
           {filters.filter === "agent" && (
             <ToggleGroup type="single" variant="outline" size="sm" value={filters.turns} onValueChange={(v) => v && set("turns")(v)} aria-label="Human involvement" className="basis-full flex-wrap">
               <ToggleGroupItem value={ALL}>{WORDS.eitherTurns} <span className="font-mono text-xs">{integer(page.counts.agent)}</span></ToggleGroupItem>
@@ -143,12 +155,12 @@ function SessionList({ query, page, filters, set, clear, row, clearRow }: {
       </Card>
       <div className="flex flex-wrap items-center justify-between gap-2"><span className="text-sm text-muted-foreground">{`${sessionCount(total)}, sorted from newest to oldest`}</span><Legend /></div>
       {rows.length ? (
-        <div className="flex flex-col gap-3">{rows.map((s) => <SessionRow key={s.id} s={s} />)}</div>
+        <div className="flex flex-col gap-3">{rows.map((s) => <SessionRow key={s.id} s={s} listSearch={search} />)}</div>
       ) : (
         <Card variant="sunk"><CardContent className="flex flex-col items-center gap-3 py-6 text-center">
           <Crumb pose="sleep" className="w-32" label={WORDS.crumb.empty} />
           <h3 className="text-lg font-semibold">No sessions match your filters</h3>
-          <p className="text-sm text-muted-foreground">Try selecting a longer date range or clearing the agent filter.</p>
+          <p className="text-sm text-muted-foreground">{filters.path ? WORDS.web.noPathMatches : "Try selecting a longer date range or clearing the agent filter."}</p>
           <Button variant="outline" size="sm" onClick={clear}>Clear filters</Button>
         </CardContent></Card>
       )}

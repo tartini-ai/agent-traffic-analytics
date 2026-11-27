@@ -157,7 +157,7 @@ def fill(con, session_ids):
         first = next((r for stream, r, _ in records if stream == SIGNALS and r.get("ty") in (PAGE, SESSION)), None)
         env = next((r.get("env") or {} for stream, r, _ in records if stream == SIGNALS and r.get("ty") == ENVIRONMENT),
                    None)
-        rows = con.execute("SELECT pv, url FROM batches WHERE session_id=? ORDER BY pv, seq", (session_id,)).fetchall()
+        rows = web_time.batch_rows(con, session_id)
         web_time.fill(con, session_id, records, rows, url)
         if env:
             _environment(con, session_id, user_agent, env)

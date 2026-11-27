@@ -18,7 +18,8 @@ before(async () => { app = await startApp() })
 after(() => app?.close())
 
 const list = sample("sessions")
-const ids = (page) => page.$$eval('a[href^="#/sessions/"]', (rows) => rows.map((row) => row.getAttribute("href").split("/").pop()))
+const ids = (page) => page.$$eval('a[href^="#/sessions/"]', (rows) => rows.map((row) => row.getAttribute("href").split("?", 1)[0].split("/").pop()))
+const rowById = (page, id) => page.locator(`a[href="#/sessions/${id}"], a[href^="#/sessions/${id}?"]`)
 const sessionsAsked = (requests) => requests.map((u) => new URL(u)).filter((u) => u.pathname === "/api/sessions").map((u) => Object.fromEntries(u.searchParams))
 
 async function open(query = "", style) {
@@ -216,14 +217,14 @@ test("an unnamed agent's row says Unnamed in its tag with the one grey avatar; a
   try {
     const unnamed = list.results.find((s) => s.verdict === "agent" && !s.agent)
     const named = list.results.find((s) => s.verdict === "agent" && s.agent && s.certainty)
-    await tab.page.waitForSelector(`a[href$="/${unnamed.id}"]`, { timeout: WAIT_MS })
-    const row = tab.page.locator(`a[href$="/${unnamed.id}"]`)
+    const row = rowById(tab.page, unnamed.id)
+    await row.waitFor({ timeout: WAIT_MS })
     const tag = row.locator("[data-slot=badge]").filter({ hasText: new RegExp(`^${judging.names.unnamed.label}$`) })
     const avatars = await avatarLooks(tag)
     assert.equal(avatars.length, 1, "Unnamed's tag holds its avatar, as a named agent's does")
     assert.equal(avatars[0].fill, await unsureGrey(tab.page), "the grey Bot and Unknown use")
     assert.equal(await row.locator("svg.avatar").count(), 1)
-    assert.match(await tab.page.locator(`a[href$="/${named.id}"] [data-slot=badge]`).filter({ hasText: named.agent }).innerText(),
+    assert.match(await rowById(tab.page, named.id).locator("[data-slot=badge]").filter({ hasText: named.agent }).innerText(),
       new RegExp(`${named.agent}\\s*·\\s*${judging.names[named.certainty].label.toLowerCase()}`))
   } finally { await tab.close() }
 })

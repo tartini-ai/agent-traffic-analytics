@@ -24,7 +24,8 @@ a tab after 30 minutes or 24 hours), and:
    not reach the copies a b-tree page split leaves in unused page space, nor a deleted key kept as a divider in an
    index page; a rewritten file has neither. On a large database this takes a while;
 5. deletes the same rows from each backup `agentcake migrate` or the upgrade to visits made (backups/), and the
-   stylesheets no chunk of it refers to any more, and rewrites it the same way;
+   stylesheets no chunk of it refers to any more, and rewrites it the same way. An id missing from the live database
+   can still name a visit in a backup, for example if the previous delete stopped before it cleaned the backup;
 6. removes the lines of cake.log that name the ids, the visits' included, rewriting the file in place: `agentcake
    start` points the running cake's output at that file in append mode, so it goes on writing to it.
 
@@ -37,6 +38,7 @@ import json
 import os
 import re
 import sqlite3
+from contextlib import closing
 
 from agentcake import paths, replay_chunks, space, store, streams, styles, visit_join
 from agentcake.config import load_cfg
@@ -67,6 +69,7 @@ def delete_sessions(ids, now_ms=None, cfg=SETTINGS):
         con = store.db()
         try:
             con.execute("PRAGMA secure_delete=ON")
+            missing = _missing_live(con, ids)
             ids = visit_join.whole_visits(con, ids)
             visits = _visits_of(con, ids)
             found = _delete_rows(con, ids, visits, now_ms, cfg)
@@ -74,9 +77,9 @@ def delete_sessions(ids, now_ms=None, cfg=SETTINGS):
             database = _rewrite(con)
         finally:
             con.close()
-    backups = [_clean_backup(path, ids, visits) for path in _backups(cfg)]
+    backups, log_ids = _backup_reports(cfg, ids, visits, missing)
     return {"sessions": found, "reclaim": reclaim, "database": database, "backups": backups,
-            "log_lines": scrub_log(paths.log_file(), _named(ids, visits))}
+            "log_lines": scrub_log(paths.log_file(), log_ids)}
 
 
 def preview(ids, cfg=SETTINGS):
@@ -84,20 +87,14 @@ def preview(ids, cfg=SETTINGS):
     ids = _checked(ids)
     con = store.db()
     try:
+        missing = _missing_live(con, ids)
         ids = visit_join.whole_visits(con, ids)
         visits = _visits_of(con, ids)
         found = [_found(con, sid, _chunk_refs(con, sid)) for sid in ids]
     finally:
         con.close()
-    backups = []
-    for path in _backups(cfg):
-        backup = sqlite3.connect(path)
-        try:
-            backups.append({"file": _relative(path), "rows": sum(sum(_row_counts(backup, sid).values()) for sid in ids)
-                            + _visit_rows(backup, ids, visits, delete=False)})
-        finally:
-            backup.close()
-    lines = _lines_naming(paths.log_file(), _id_pattern(_named(ids, visits), bytes))
+    backups, log_ids = _backup_reports(cfg, ids, visits, missing, dry_run=True)
+    lines = _lines_naming(paths.log_file(), _id_pattern(log_ids, bytes))
     return {"sessions": found, "reclaim": None, "database": None, "backups": backups, "log_lines": lines}
 
 
@@ -308,20 +305,58 @@ def _backups(cfg):
             if os.path.isfile(path) and _is_database(path)]
 
 
-def _clean_backup(path, ids, visits):
-    """Step 5 for one backup: its rows of these sessions and visits, deleted and the file rewritten; {file, rows,
-    error}."""
+def _missing_live(con, ids):
+    """Requested ids with no live session, visit membership or tab continuation."""
+    return [sid for part in store.parts(ids) for (sid,) in con.execute(
+        f"WITH named(id) AS (VALUES {','.join(['(?)'] * len(part))}) SELECT id FROM named "
+        "WHERE NOT EXISTS (SELECT 1 FROM sessions WHERE id=named.id) AND NOT EXISTS "
+        "(SELECT 1 FROM session_web WHERE session_id=named.id OR visit_id=named.id OR tab_id=named.id)", part)]
+
+
+def _backup_reports(cfg, ids, visits, missing, dry_run=False):
+    backups, recovered = [], set()
+    for path in _backups(cfg):
+        report, tabs = _backup_report(path, ids, visits, missing, dry_run)
+        backups.append(report)
+        recovered.update(tabs)
+    if recovered:  # a tab recovered from an old copy may belong to a different live visit now
+        with closing(store.db()) as con:
+            recovered = _missing_live(con, sorted(recovered))
+    return backups, _named(_named(ids, visits), recovered)
+
+
+def _backup_tabs(con, missing):
+    """Find a missing live visit's own tabs in this copy, if it has visit metadata."""
+    if not missing:
+        return []
+    columns = {row[1] for row in con.execute("PRAGMA table_info(session_web)")}
+    if not {"session_id", "visit_id"} <= columns:
+        return []
+    return [sid for part in store.parts(missing) for (sid,) in con.execute(
+        f"SELECT session_id FROM session_web WHERE visit_id IN ({','.join('?' * len(part))})", part) if valid_id(sid)]
+
+
+def _backup_report(path, ids, visits, missing, dry_run):
+    """Count a backup's matching rows and, unless previewing, delete them and rewrite it."""
     con = sqlite3.connect(path, timeout=load_cfg()["db_timeout_s"])
     try:
-        con.execute("PRAGMA secure_delete=ON")
-        rows = sum(sum(_row_counts(con, sid).values()) for sid in ids) + _visit_rows(con, ids, visits)
-        for sid in ids:
+        if not dry_run:
+            con.execute("PRAGMA secure_delete=ON")
+            con.execute("BEGIN IMMEDIATE")
+        tabs = _backup_tabs(con, missing)
+        sessions = _named(ids, tabs)
+        rows = sum(sum(_row_counts(con, sid).values()) for sid in sessions)
+        # A recovered tab may also be the id of a different visit. Keep the original visit-row scope.
+        report = {"file": _relative(path), "rows": rows + _visit_rows(con, ids, visits, delete=not dry_run)}
+        if dry_run:
+            return report, tabs
+        for sid in sessions:
             _delete_plain(con, sid)
         if _has_table(con, "styles") and _has_table(con, "chunks"):
             styles.gc_styles(con)  # a stylesheet is kept once for every visit that showed it: drop the orphans
-        _scrub_settings(con, ids, clock_ms())
+        _scrub_settings(con, sessions, clock_ms())
         con.commit()
-        return {"file": _relative(path), "rows": rows, **_rewrite(con)}
+        return {**report, **_rewrite(con)}, tabs
     finally:
         con.close()
 

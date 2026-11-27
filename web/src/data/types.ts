@@ -132,18 +132,18 @@ export type Storage = {
   disk: Disk; replays_stopped: ReplaysStopped
 }
 
-// ---------------------------------------------------------------- GET /api/sessions?verdict=&turns=&evidence=&agent=&range=&dimension=&key=&cursor=
+// ---------------------------------------------------------------- GET /api/sessions?verdict=&turns=&evidence=&agent=&range=&dimension=&key=&path=&cursor=
 
 /** verdict: one verdict; turns: an Agent session's split (keeps only Agent sessions); evidence: thin keeps the Human
  *  sessions cake couldn't tell; agent: an exact name from agent_names; dimension + key: the sessions of one row of the
- *  dashboard's Sources, Devices or Geography tables (dimension without key: those without a value); they combine;
- *  cursor: `next` of the page before. */
+ *  dashboard's Sources, Devices or Geography tables (dimension without key: those without a value);
+ *  path: an exact stored pathname from Paths, over Agent and Human sessions; cursor: `next` of the page before. */
 export type SessionsQuery = {
   verdict?: Verdict; turns?: AgentTurns; evidence?: Evidence; agent?: string; range?: DateRange; dimension?: WebDimension; key?: string
-  cursor?: string
+  path?: string; cursor?: string
 }
 export type SessionsPage = {
-  /** Counts under the agent and range filters, whatever the verdict and turns filters. */
+  /** Counts under agent, range, dimension and path, whatever the verdict and turns filters. */
   counts: SessionCounts
   /** How many sessions every filter keeps. */
   total: number
@@ -292,6 +292,12 @@ export type { AddressCheck, Health } from "./health-types"
 // ---------------------------------------------------------------- GET /api/web?range= (./web-types.ts)
 
 export type { ActiveTime, AgentNumbers, PathRow, TrendEvery, TrendInterval, TrendNumbers, WebAnalytics, WebDimension, WebQuery, WebRow, WebTable } from "./web-types"
+
+// ---------------------------------------------------------------- GET /api/funnel?range=&step=&step=
+
+/** Each step counts visits that reached every preceding step in order. Agent includes Human + agent. */
+export type FunnelStep = { path: string; agent: number; human: number }
+export type FunnelReport = { steps: FunnelStep[] }
 
 // ---------------------------------------------------------------- errors
 

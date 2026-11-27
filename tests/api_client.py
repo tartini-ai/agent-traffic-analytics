@@ -50,7 +50,8 @@ class Client:
                 message[name] = value
         url = urlsplit(path)
         view = routes.resolve(routes.LOCAL, method, url.path)
-        query = {name: [value] for name, value in query.items() if value is not None}
+        query = {name: list(value) if isinstance(value, (list, tuple)) else [value]
+                 for name, value in query.items() if value is not None}
         answer = view(Request(url.path, query, message, body))
         text = answer.body.decode() if isinstance(answer.body, bytes) else answer.body
         return Answer(answer.status, json.loads(text) if answer.ctype.startswith("application/json") else text,

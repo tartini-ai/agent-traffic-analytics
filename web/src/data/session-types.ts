@@ -162,3 +162,11 @@ export type SessionDetail = {
 /** An rrweb event as recorded (timestamp in epoch milliseconds); the player reads the rest. */
 export type ReplayEvent = { type: number; timestamp: number; data: Record<string, unknown> }
 export type ReplayChunk = { chunk: number; start_ms: number; end_ms: number; events: ReplayEvent[] }
+/** The fields replay uses from POST /api/delete to confirm removal and spot cleanup failures. */
+export type DeleteCleanup = { error: string | null; log_cleared: boolean }
+export type SessionDeletion = {
+  sessions: { found: boolean }[]
+  database: DeleteCleanup
+  backups: (DeleteCleanup & { rows: number })[]
+  log_lines: number
+}

@@ -1,5 +1,5 @@
-"""GET /api/sessions?verdict=&turns=&evidence=&agent=&range=&dimension=&key=&cursor=: the session list, one page at a
-time (the session list page draws it).
+"""GET /api/sessions?verdict=&turns=&evidence=&agent=&range=&dimension=&key=&path=&cursor=: the session list,
+one page at a time (the session list page draws it).
 
 First the sessions with data newer than their verdict are judged (judging.catch_up); then, newest first, the sessions
 that count (visits.py) with the verdict (visits.VERDICTS; none or "all" is every verdict), of an Agent session's
@@ -11,14 +11,15 @@ and range filters whatever the verdict and split; agent_names (the named agents:
 to filter by) under the range only, so the agent filter can always be changed. dimension and key keep the sessions of
 one row of the dashboard's Sources, Devices or Geography tables (web_dimensions.py; dimension without key: the
 sessions with no value; key sent empty: the empty value, a referring domain's visits without a referrer), as PostHog's
-web analytics opens the recordings of a row; every count is under them too.
+web analytics opens the recordings of a row. path keeps the Agent and Human sessions that viewed an exact path
+in any counted tab, as the dashboard's Paths table does. Every count is under these filters too.
 """
 import base64
 import binascii
 from http import HTTPStatus
 
 from agentcake import config, judging, timezone
-from agentcake.api import answers, periods, visits, web_dimensions
+from agentcake.api import answers, periods, visits, web, web_dimensions
 
 CURSOR_SEPARATOR = ":"
 BASE64_BLOCK = 4  # protocol: base64 text comes in blocks of 4 characters
@@ -32,20 +33,25 @@ def view(request):
     agent = answers.text_param(request, "agent")
     range_key = answers.choice(request, "range", periods.range_keys())
     dimension = answers.choice(request, "dimension", tuple(web_dimensions.EXPRESSIONS))
+    path = answers.text_param(request, "path")
     after = read_cursor(answers.text_param(request, "cursor"))
     judging.catch_up()
     now, size, zone = periods.now_ms(), answers.numbers()["page_size"], timezone.chosen(config.load_cfg())
     scope = visits.Scope().between(periods.window(range_key, now, zone)[0])
-    if dimension:
-        scope = web_dimensions.where(scope, dimension, answers.given_param(request, "key"))
-    listed = scope.agent(agent)
-    rows = listed.group(verdict).group(turns).group(evidence)
     con = visits.connect()
     try:
-        results, keys = visits.page(con, rows.before(after) if after else rows, size + 1, now, zone)
-        body = {"counts": visits.counts(con, listed), "total": visits.total(con, rows),
-                "agent_names": [name for name, _ in visits.agents(con, scope) if name], "results": results[:size],
-                "next": cursor(keys[size - 1]) if len(results) > size else None, "page_size": size}
+        if path:
+            web.fill(con, scope)
+            scope = web.visiting(scope, path)
+        if dimension:
+            scope = web_dimensions.where(scope, dimension, answers.given_param(request, "key"))
+        listed = scope.agent(agent)
+        rows = listed.group(verdict).group(turns).group(evidence)
+        with visits.snapshot(con):
+            results, keys = visits.page(con, rows.before(after) if after else rows, size + 1, now, zone)
+            body = {"counts": visits.counts(con, listed), "total": visits.total(con, rows),
+                    "agent_names": [name for name, _ in visits.agents(con, scope) if name], "results": results[:size],
+                    "next": cursor(keys[size - 1]) if len(results) > size else None, "page_size": size}
     finally:
         con.close()
     return answers.ok(body)

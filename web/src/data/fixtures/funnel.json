@@ -1,0 +1,6 @@
+{
+  "steps": [
+    { "path": "/pricing", "agent": 1, "human": 1 },
+    { "path": "/signup", "agent": 1, "human": 0 }
+  ]
+}

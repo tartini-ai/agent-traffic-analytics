@@ -59,6 +59,7 @@ export function fixtureApi({ set } = {}) {
       switch (route) {
         case "GET overview": return send(200, answer("overview"))
         case "GET web": return send(200, answer("web"))
+        case "GET funnel": return send(200, funnelReport(answer("funnel"), url.searchParams.getAll("step")))
         case "GET sessions": return send(200, sessionsPage(answer("sessions"), url.searchParams))
         case "GET session/:id": {
           const detail = sessionSample(id)
@@ -89,11 +90,18 @@ export function fixtureApi({ set } = {}) {
   }
 }
 
-/** The sample list, filtered like the real one (verdict, turns and agent combine); a cursor asks for the next page, which
- *  the sample doesn't have. */
+function funnelReport(example, paths) {
+  if (paths.length < 2 || paths.some((path) => !path.startsWith("/") || /[?#]/.test(path)))
+    throw new Error("Enter two or more page paths that start with / and leave out any query string or fragment.")
+  if (paths.length === example.steps.length && paths.every((path, i) => path === example.steps[i].path)) return example
+  return { steps: paths.map((path) => ({ path, agent: 0, human: 0 })) }
+}
+
+/** The sample list, filtered by verdict, turns, agent and any visited paths available in the sample details. A
+ *  cursor asks for the next page, which the sample doesn't have. */
 function sessionsPage(page, params) {
   if (params.get("cursor")) return { ...page, results: [], next: null }
-  const agent = params.get("agent")
+  const agent = params.get("agent"), pathname = params.get("path")
   const picked = Object.entries(FILTERS).flatMap(([param, field]) => {
     const value = params.get(param)
     if (!value || (param === "verdict" && value === "all")) return []
@@ -101,7 +109,16 @@ function sessionsPage(page, params) {
     return [[field, value]]
   })
   const names = (s) => (s.agents ?? [s]).map((a) => a.agent ?? a.name) // a session two agents acted in matches either
-  const results = page.results.filter((s) => picked.every(([field, value]) => s[field] === value) && (!agent || names(s).includes(agent)))
+  const scoped = pathname ? page.results.filter((s) => s.verdict !== "bot" &&
+    sessionSample(s.id)?.pages.some((view) => view.path.split("?")[0] === pathname)) : page.results
+  const listed = agent ? scoped.filter((s) => names(s).includes(agent)) : scoped
+  const results = listed.filter((s) => picked.every(([field, value]) => s[field] === value))
+  if (pathname) {
+    const counts = Object.fromEntries(Object.keys(page.counts).map((group) => [group,
+      listed.filter((s) => group === "all" || [s.verdict, s.agent_turns, s.evidence].includes(group)).length]))
+    const agent_names = [...new Set(scoped.filter((s) => s.verdict === "agent").flatMap(names).filter(Boolean))]
+    return { ...page, counts, agent_names, results, total: results.length, next: null }
+  }
   // the sample holds one page of a longer list: its counts say how many one filter keeps, the rows how many two keep
   const total = agent || picked.length > 1 ? results.length : picked.length ? page.counts[picked[0][1]] : page.total
   return { ...page, results, total }

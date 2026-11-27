@@ -5,7 +5,7 @@
 // first: its sessions (bold), visitors (distinct visitor IDs) and page views, of the sessions picked (All: Agent and
 // Human together); with All, its Agent sessions' share of them (bold, a number, no bar). Hovering a row shows each
 // number split into Agent and Human. Script bots are never counted, as the note under the table says. Rows come by the
-// picked sessions, most first, ten, then "Show all N" in place. A breakdown's value opens the Session replay list of
+// picked sessions, most first, ten, then "Show all N" in place. A path or breakdown value opens the Session replay list of
 // its sessions, as PostHog's "View recordings"; a region or a city reads "Country – name", and a country's sessions
 // without one "Country – Not set", as PostHog writes them. Country, region and city come from the city database on a
 // server: DB-IP's credit sits under the table while it is in use; a server downloads it by itself, so until then the
@@ -129,8 +129,16 @@ export function StatsTable<R extends Counted>({ title, icon, help, column, rows,
 
 /** Paths, as PostHog names its table of pages: the paths Agent and Human sessions viewed most (a session counts once per
  *  path; its page views of it each time it opened). */
-export function PathsTable({ paths, shown }: { paths: PathRow[]; shown: number }) {
-  return <StatsTable title={WORDS.paths} icon={TABLE_ICONS.paths} help={WORDS.about.paths} column={WORDS.path} rows={paths} rowKey={(p) => p.path} label={(p) => <span className="font-mono">{p.path}</span>}
+export function PathsTable({ paths, shown, range }: { paths: PathRow[]; shown: number; range?: DateRange }) {
+  const link = ({ path }: PathRow, kind: Kind) => {
+    const query = new URLSearchParams({ path, ...(range && { range }), ...(kind !== "all" && { filter: kind }) })
+    return (
+      <Button variant="link" size="xs" asChild className="h-auto min-h-8 max-w-full justify-start whitespace-normal text-left">
+        <Link to={`/sessions?${query}`} aria-label={W.watchPath(path)}><span className="wrap-anywhere font-mono">{path}</span></Link>
+      </Button>
+    )
+  }
+  return <StatsTable title={WORDS.paths} icon={TABLE_ICONS.paths} help={WORDS.about.paths} column={WORDS.path} rows={paths} rowKey={(p) => p.path} label={link}
     shown={shown} empty={WORDS.noSessionsInRange} />
 }
 
