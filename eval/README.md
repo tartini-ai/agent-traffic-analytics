@@ -133,6 +133,36 @@ private recorder to distinguish short sessions from missing uploads and segmenta
 page-visible trace against matched manual runs, ordinary Chrome and other Chromium apps. Require fresh agent
 runs and held-out human controls before changing a detection rule.
 
+## Recording Grok Bot
+
+Use the Grok Bot cloud computer on a controlled test shop with AgentCake in server mode. Record at least 20
+agent-only visits across tasks such as browsing products, searching, adding to a test cart and filling a form.
+Include short visits. Record five additional visits where a person takes over in the same tab. Use synthetic
+values and a test account if a task requires signing in. [Grok Bot computer and takeover documentation](https://docs.x.ai/grok-bot/faq#can-grok-bot-use-any-website)
+
+Label each visit in the `truth_goal.jsonl` format above. Give agent-only visits `case: T3` and `class: agent`,
+and give takeover visits `case: T5` and `class: mixed`. Give both `group: grok-bot`. Use the hash of the
+stored session ID for `h`. For a takeover, record the last action of one side and the first action of the
+next side so the `stretches` mark the change in epoch milliseconds. Keep the source recordings, browser and
+request evidence, and truth list private.
+
+```sh
+bin/agentcake eval --cake-home /path/to/recording-data --truth-goal /path/to/grok-truth.jsonl --out /path/to/report
+```
+
+Read **Grok Bot recording cohorts** in `eval.md` or `grok_bot_cohorts` in `eval.json`. Compare the loaded
+session count with the truth list before interpreting the rates. The counts include thin visits, show how
+often agent-only visits were judged Mixed, and give the verdict names so any name other than `grok-bot`
+is visible. The takeover row reports Mixed verdicts, matched handoffs and the A5 median. A direction mismatch
+counts as a miss. The true handoff count also includes visits with no verdict timeline.
+
+Check that at least 90% of all agent-only visits are Agent or Mixed, that none are falsely Mixed, and that
+every named verdict uses `grok-bot`. Use the Mixed count and A5's time limit to check the takeover cohort.
+The ordinary A2 reference for `store/grok-bot` uses the judged visits. `recorded/grok-bot` is the equivalent
+reference for agent visits loaded through `--recordings`. Use the stored server-mode cohort to evaluate
+request and network evidence. Compare the same clean human and held-out sets before and after any rule
+change. Update the rule's evidence grade only after checking the live recordings.
+
 ## What the report says
 
 One line per measure it could run, with its data set, the number of sessions, the result and, with `--gate`, the

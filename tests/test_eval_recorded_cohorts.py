@@ -8,11 +8,12 @@ if REPO not in sys.path:
     sys.path.insert(0, REPO)
 
 from agentcake import datafiles  # noqa: E402
-from agentcake.evaluation import recorded_cohorts  # noqa: E402
+from agentcake.evaluation import recorded_cohorts, scoring  # noqa: E402
 
 COHORTS = datafiles.load("data/eval.json")["recorded"]["mode_cohorts"]
 LIMIT_S = 3
 ANTIGRAVITY = "antigravity-browser"
+GROK_BOT = recorded_cohorts.GROK_BOT
 
 
 def row(id_, label, truth, mode, verdict, name=None):
@@ -58,6 +59,51 @@ class RecordedCohorts(unittest.TestCase):
         self.assertEqual(result["handoffs"], {"true": 4, "found": 2, "within_limit": 1})
         self.assertIn("| agy-browser | in-app | mixed | 4 | 1 | 2 | 1 | — | 2/4 (1) |",
                       recorded_cohorts.markdown(cells, LIMIT_S))
+
+
+def grok_row(id_, truth, case, verdict, name=None):
+    visit = row(id_, GROK_BOT, truth, None, verdict, name)
+    visit["truth"]["case"] = case
+    return visit
+
+
+class GrokBotCohorts(unittest.TestCase):
+    def test_agent_only_keeps_wrong_names_false_mixed_and_thin_visits(self):
+        visits = [grok_row(0, "agent", "T3", "agent", GROK_BOT),
+                  grok_row(1, "agent", "T3", "mixed", GROK_BOT),
+                  grok_row(2, "agent", "T3", "agent", "other-agent"),
+                  grok_row(3, "agent", "T3", "too_little_data"),
+                  grok_row(4, "agent", "T5", "agent", GROK_BOT),
+                  row(5, "different-group", "agent", None, "agent")]
+        cells = recorded_cohorts.grok_bot(visits, {}, LIMIT_S)
+        self.assertEqual(cells, [{"truth": "agent", "sessions": 4,
+                                  "classes": {"agent": 2, "mixed": 1, "too_little_data": 1},
+                                  "names": {GROK_BOT: 2, "other-agent": 1}, "named_agent_or_mixed": 2}])
+        self.assertIn("| Agent only | 4 | 2 | 1 | 1 | 3/4 | 2/4 | `other-agent` (1) |",
+                      recorded_cohorts.grok_bot_markdown(cells, LIMIT_S))
+
+    def test_handoff_coverage_and_a5_have_their_own_denominators(self):
+        classes = ("mixed", "mixed", "mixed", "agent", "too_little_data", "agent")
+        visits = [grok_row(i, "mixed", "T5", verdict, GROK_BOT) for i, verdict in enumerate(classes)]
+        actions = scoring.action_scores(["agent", "human"], ["agent", "human"])
+        scores = [{**actions, "handoff_errors_s": [error], "handoffs_extra": 0}
+                  for error in (1.5, 5.0, None, None)]
+        marked = {i: {"class": classes[i], "true_handoffs": 1, "verdict": score}
+                  for i, score in enumerate([*scores, None])}
+        cells = recorded_cohorts.grok_bot(visits, marked, LIMIT_S)
+        self.assertEqual(cells[0]["handoffs"], {"true": 5, "found": 2, "within_limit": 1, "without_truth": 1,
+                                                "without_timeline": 1, "a5_samples": 3, "a5_median_s": 5.0})
+        self.assertIn("| 2/5 | 1 | 1 | 1 | 5 s (3) |", recorded_cohorts.grok_bot_markdown(cells, LIMIT_S))
+
+        del marked[1]  # The remaining A5 samples are one measured handoff and one missed handoff.
+        cells = recorded_cohorts.grok_bot(visits, marked, LIMIT_S)
+        self.assertIsNone(cells[0]["handoffs"]["a5_median_s"])
+        self.assertIn("| 1/4 | 1 | 2 | 1 | over the limit (2) |",
+                      recorded_cohorts.grok_bot_markdown(cells, LIMIT_S))
+
+    def test_no_recordings_produces_no_measurements(self):
+        self.assertEqual(recorded_cohorts.grok_bot([], {}, LIMIT_S), [])
+        self.assertEqual(recorded_cohorts.grok_bot_markdown([], LIMIT_S), [])
 
 
 if __name__ == "__main__":

@@ -7,7 +7,7 @@ A measurement: {"threshold", "source", "value", "n", "count" (when the value is 
 eval/thresholds.json's "data"; this module measures every data set that has the samples. The statistic of each
 threshold is its "statistic" in thresholds.json; the code below is that sentence.
 """
-from agentcake.evaluation import sessions, takeovers
+from agentcake.evaluation import recorded_cohorts, sessions, takeovers
 from agentcake.evaluation.stats import tally
 
 AGENTLIKE = ("agent", "mixed")
@@ -63,6 +63,9 @@ def _a2(rows, settings):
              and (r["truth"].get("case") == "T3" or r["group"] in groups)]
     posthog = [r for r in rows.get("posthog", []) if r["group"] == settings["posthog"]["agent_group"]]
     out = [_judged_ratio(source, items) for source, items in (("lab", lab), ("store", store), ("posthog", posthog))]
+    grok = [r for r in store if r["group"] == recorded_cohorts.GROK_BOT and r["truth"].get("case") == "T3"]
+    if grok:
+        out.append(_judged_ratio(f"store/{recorded_cohorts.GROK_BOT}", grok))
     return (out + _a2_recorded(rows.get(RECORDED, []), settings["recorded"]["a2_labels"])
             + _a2_self_collected(rows.get(SELFCOLLECT, [])))
 

@@ -2,7 +2,8 @@
 
     build(data, settings, limit_s, with_logistic) -> results
 
-results: "recorded_cohorts" (recorder reference counts by mode), "rows" (each data set's sessions with their four-layer
+results: "recorded_cohorts" (recorder reference counts by mode), "grok_bot_cohorts" (Grok Bot counts from a CAKE_HOME),
+"rows" (each data set's sessions with their four-layer
 verdict, sessions.py; a website's own labelled
 sessions, "site", are held out: only the sessions table and the scoreboard's held-out cells read them), "scoreboard"
 (the behaviour layer reported the industry's way, scoreboard.py), "heldout" (thresholds set from data, tested on the
@@ -49,10 +50,13 @@ def build(data, settings, limit_s, with_logistic=True):
     reference_ids = {r["id"] for r in references}
     benchmark_rows = dict(rows, recorded=[r for r in rows["recorded"] if r["id"] not in reference_ids])
     handoffs = _recorded_handoffs(data["recorded"], rows["recorded"], limit_s)
-    takeover_rows = {**_takeovers(lab, data, posthog, settings, limit_s),
+    store_handoffs = {s["h"]: _handoff_row(s["evidence"], s["truth"][SPLICE_TRUTH], limit_s)
+                      for s in data["store"] if s["truth"].get(SPLICE_TRUTH)}
+    takeover_rows = {**_takeovers(lab, data, posthog, settings, limit_s, store_handoffs),
                      "recorded_handoffs": [r for h, r in handoffs.items() if h not in reference_ids]}
     return {"rows": rows,
             "recorded_cohorts": recorded_cohorts.build(references, handoffs, cohorts, limit_s),
+            "grok_bot_cohorts": recorded_cohorts.grok_bot(rows["store"], store_handoffs, limit_s),
             "segments": {"single_source": segments.single_source(lab_segments, settings) if lab else [],
                          "lab_splices": segments.splices(lab_segments, settings, with_logistic) if lab else []},
             "takeovers": takeover_rows,
@@ -88,7 +92,7 @@ def _heldout_sessions(data, rows, settings):
             for r, events, raw_input, touch in found if r["truth"].get("class") in ("human", "agent") and events]
 
 
-def _takeovers(lab, data, posthog, settings, limit_s):
+def _takeovers(lab, data, posthog, settings, limit_s, store_handoffs):
     group = settings["lab"]
     cic_raw = [(run, s["raw"]) for run, s in lab.items() if s["segment_group"] == group["splice_agent"]]
     humanlike = [(run, s["raw"]) for run, s in lab.items() if s["segment_group"] == group["splice_humanlike"]
@@ -96,9 +100,7 @@ def _takeovers(lab, data, posthog, settings, limit_s):
     humans_raw = [(r["h"], r["raw"]) for r in data["recordings"] if splice.usable(r["raw"])]
     out = {"lab_splices": takeovers.splice_rows(humanlike, humans_raw, True, limit_s),
            "recording_splices": takeovers.splice_rows(cic_raw, humans_raw, True, limit_s),
-           "store": [takeovers.session_row(s["evidence"], _who_at(s["truth"][SPLICE_TRUTH]),
-                                           splice.boundaries(s["truth"][SPLICE_TRUTH]), limit_s)
-                     for s in data["store"] if s["truth"].get(SPLICE_TRUTH)]}
+           "store": list(store_handoffs.values())}
     if posthog:
         out.update(_posthog_takeovers(lab, posthog, settings, limit_s))
     return out
@@ -109,9 +111,12 @@ def _recorded_handoffs(items, rows, limit_s):
     of each stretch that follows the other side's (splice.boundaries, as for a T5 session of a CAKE_HOME).
     Keyed by the recorder hash so reference hand-offs can be counted separately."""
     evidence = {r["id"]: r["evidence"] for r in rows}
-    return {item["h"]: takeovers.session_row(evidence[item["h"]], _who_at(item["stretches"]),
-                                           splice.boundaries(item["stretches"]), limit_s)
+    return {item["h"]: _handoff_row(evidence[item["h"]], item["stretches"], limit_s)
             for item in items if item["stretches"] and item["truth"] != "human"}
+
+
+def _handoff_row(evidence, stretches, limit_s):
+    return takeovers.session_row(evidence, _who_at(stretches), splice.boundaries(stretches), limit_s)
 
 
 def _posthog_takeovers(lab, posthog, settings, limit_s):

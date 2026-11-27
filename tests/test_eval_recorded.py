@@ -50,6 +50,23 @@ class GateData(unittest.TestCase):
         for label in self.A2_LABELS:
             self.assertNotIn(f"recorded/{label}", data["reference"] + data["gated"], label)
 
+    def test_a2_reports_grok_bot_sources_as_references(self):
+        store = [dict(row(label, judged), truth={"class": "agent", "case": "T3"})
+                 for label, judged in (("grok-bot", "agent"), ("grok-bot", "too_little_data"),
+                                       ("claude-chrome", "human"))]
+        rows = {"store": store, "recorded": [row("grok-bot", "mixed")]}
+        result = {"rows": rows, "takeovers": {}, "bots": {"t22": bots.t22_table([], SETTINGS)}}
+        judged = gate.judge(gate.load(THRESHOLDS), measures.collect(result, SETTINGS, LIMIT_S))
+        a2 = next(v for v in judged if v["id"] == "A2")
+        references = {m["source"]: m for m in a2["reference"]}
+        gated = {m["source"]: m for m in a2["gated"]}
+        self.assertTrue({"store/grok-bot", "recorded/grok-bot"}.isdisjoint(gated))
+        server = references["store/grok-bot"]
+        recorder = references["recorded/grok-bot"]
+        self.assertEqual((server["count"], server["n"], server["details"]["not_judged"]), (1, 1, 1))
+        self.assertEqual((recorder["count"], recorder["n"]), (1, 1))
+        self.assertEqual((gated["store"]["count"], gated["store"]["n"]), (1, 2))
+
     def test_a3_to_a5_judge_the_real_hand_offs_beside_the_splices(self):
         for threshold in ("A3", "A4", "A5"):
             data = self.entries[threshold]["data"]
